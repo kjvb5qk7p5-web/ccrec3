@@ -155,6 +155,10 @@
     #benefitsTable td:nth-child(7) { width: 15%; } /* Delete button */
 
     /* Expired merchant benefits – show in red */
+    #benefitsTable tr.expiring-soon td {
+      color: #DAA520; /* yellow/gold for expiring soon */
+    }
+    
     #benefitsTable tr.expired-benefit td {
       color: red;
     }
@@ -1500,14 +1504,32 @@
     // ---------- Merchant benefits UI ----------
     function renderMerchantBenefits() {
       const benefits = loadMerchantBenefits();
-      const tbody = document.getElementById("benefitsTbody"); // note: lowercase 'b'
+      const tbody = document.getElementById("benefitsTbody");
       if (!tbody) return;
     
       tbody.innerHTML = "";
     
       const today = parseISODate(formatTodayISO());
     
-      benefits.forEach((b, idx) => {
+      // Keep track of original index so delete still works correctly
+      const benefitsWithIndex = benefits.map((b, idx) => ({ b, idx }));
+    
+      // Sort by Merchant Name (case insensitive), then End Date
+      benefitsWithIndex.sort((a, b) => {
+        const nameA = (a.b.merchant || "").toLowerCase();
+        const nameB = (b.b.merchant || "").toLowerCase();
+        if (nameA !== nameB) {
+          return nameA.localeCompare(nameB);
+        }
+    
+        const endA = parseISODate(a.b.endDate);
+        const endB = parseISODate(b.b.endDate);
+        const timeA = endA ? endA.getTime() : Infinity;
+        const timeB = endB ? endB.getTime() : Infinity;
+        return timeA - timeB;
+      });
+    
+      benefitsWithIndex.forEach(({ b, idx }) => {
         const tr = document.createElement("tr");
     
         const discountText =
@@ -1532,12 +1554,18 @@
         const categoryText = b.category || "";
         const endDateText = b.endDate || "";
     
-        // Figure out if it's expired
         const end = parseISODate(b.endDate);
         const expired = end && today && end < today;
     
+        let expiringSoon = false;
+        if (!expired && end && today) {
+          const soonCutoff = new Date(today);
+          soonCutoff.setDate(soonCutoff.getDate() + 7);
+          expiringSoon = end >= today && end <= soonCutoff;
+        }
+    
         tr.innerHTML = `
-          <td>${b.merchant ? escapeHtml(b.merchant) : ""}</td>
+          <td>${b.merchant ? `<strong>${escapeHtml(b.merchant)}</strong>` : ""}</td>
           <td>${b.card ? renderCardBadge(b.card) : ""}</td>
           <td>${discountText}</td>
           <td>${limitText}</td>
@@ -1556,6 +1584,8 @@
     
         if (expired) {
           tr.classList.add("expired-benefit");
+        } else if (expiringSoon) {
+          tr.classList.add("expiring-soon");
         }
     
         tbody.appendChild(tr);
